@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenRouter Image Gen Test</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+        select, textarea, button { width: 100%; padding: 0.5rem; box-sizing: border-box; }
+        textarea { height: 100px; }
+        button { background: #28a745; color: white; border: none; cursor: pointer; font-size: 1rem; }
+        button:hover { background: #218838; }
+        button:disabled { background: #ccc; }
+        #result { margin-top: 2rem; text-align: center; background: #f4f4f4; padding: 1rem; border-radius: 4px; min-height: 50px; }
+        #result img { max-width: 100%; height: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Image Generation Test</h1>
+    
+    <div class="form-group">
+        <label for="model">Model:</label>
+        <select id="model">
+            <option value="openai/dall-e-3">DALL-E 3</option>
+            <option value="stabilityai/stable-diffusion-3-medium">Stable Diffusion 3 Medium</option>
+            <option value="midjourney/mj-v6">Midjourney v6 (via Proxy)</option>
+            <option value="openai/dall-e-2">DALL-E 2</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="aspect">Aspect Ratio:</label>
+        <select id="aspect">
+            <option value="16:9">16:9</option>
+            <option value="4:3">4:3</option>
+            <option value="1:1" selected>1:1</option>
+            <option value="3:4">3:4</option>
+            <option value="9:16">9:16</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="prompt">Prompt:</label>
+        <textarea id="prompt" placeholder="Describe the image to generate..."></textarea>
+    </div>
+
+    <button id="sendBtn">Generate Image</button>
+
+    <div id="result"></div>
+
+    <script>
+        const sendBtn = document.getElementById('sendBtn');
+        const resultDiv = document.getElementById('result');
+
+        sendBtn.addEventListener('click', async () => {
+            const model = document.getElementById('model').value;
+            const aspect = document.getElementById('aspect').value;
+            const prompt = document.getElementById('prompt').value;
+
+            if (!prompt) {
+                alert('Please enter a prompt');
+                return;
+            }
+
+            sendBtn.disabled = true;
+            resultDiv.innerText = 'Generating image... this may take a while...';
+            resultDiv.className = '';
+
+            try {
+                const response = await fetch('/api/openrouter/image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model, prompt, aspectRatio: aspect })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    resultDiv.innerHTML = '';
+                    const img = document.createElement('img');
+                    // The server needs to serve the saved file. 
+                    // We assume the server maps the 'Server' folder to root.
+                    // The filePath returned is absolute, we need to convert it to relative URL.
+                    // Since we are in /OpenRouterApi/Tests/image-test.html, and images are in /OpenRouterApi/Images/
+                    // We expect the server to serve files statically.
+                    
+                    // We need the relative path from the server root.
+                    // If the backend returns the full path, we might need to parse it or have the backend return a relative URL.
+                    // For now, we will try to use the 'url' returned by OpenRouter if available, OR construct the path.
+                    
+                    // Let's make sure the backend returns a usable relative path or we construct it.
+                    // Assuming backend saves to Server/OpenRouterApi/Images/file.png
+                    // And server serves Server/ at /.
+                    // Then URL is /OpenRouterApi/Images/file.png
+                    
+                    const fileName = data.filePath.split(/[\\/]/).pop();
+                    img.src = `/OpenRouterApi/Images/${fileName}`;
+                    resultDiv.appendChild(img);
+                    
+                    const info = document.createElement('p');
+                    info.innerText = `Saved to: ${data.filePath}`;
+                    resultDiv.appendChild(info);
+                } else {
+                    resultDiv.innerText = 'Error: ' + JSON.stringify(data.error, null, 2);
+                    resultDiv.className = 'error';
+                }
+            } catch (err) {
+                resultDiv.innerText = 'Network Error: ' + err.message;
+                resultDiv.className = 'error';
+            } finally {
+                sendBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

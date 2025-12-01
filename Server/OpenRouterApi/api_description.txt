@@ -1,0 +1,26 @@
+OpenRouter Service API
+======================
+
+This service provides an interface to the OpenRouter API for text and image generation.
+
+Files:
+- service.js: The main Node.js module containing the logic.
+- config.txt: Configuration file containing the API key.
+- Images/: Directory where generated images are saved.
+- Tests/: HTML files for testing the service.
+
+Functions (exported in service.js):
+
+1. generateText(model, prompt)
+   - Arguments:
+     - model (string): The model ID (e.g., "openai/gpt-4").
+     - prompt (string): The input text prompt.
+   - Returns: Promise resolving to { success: boolean, data: string (text) | object (error) }
+
+2. generateImage(model, prompt, aspectRatio)
+   - Arguments:
+     - model (string): The model ID.
+     - prompt (string): The image description.
+     - aspectRatio (string): One of "16:9", "4:3", "1:1", "3:4", "9:16".
+   - Returns: Promise resolving to { success: boolean, filePath: string | null, error: object | null }
+     - Saves the image to 'Images/' and a corresponding metadata .txt file.

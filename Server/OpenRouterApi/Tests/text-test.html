@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenRouter Text Gen Test</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+        select, textarea, button { width: 100%; padding: 0.5rem; box-sizing: border-box; }
+        textarea { height: 150px; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; font-size: 1rem; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; }
+        #result { margin-top: 2rem; white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 4px; min-height: 50px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Text Generation Test</h1>
+    
+    <div class="form-group">
+        <label for="model">Model:</label>
+        <select id="model">
+            <option value="openai/gpt-3.5-turbo">GPT-3.5 Turbo</option>
+            <option value="openai/gpt-4o">GPT-4o</option>
+            <option value="google/gemini-pro-1.5">Gemini Pro 1.5</option>
+            <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+            <option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8b (Free)</option>
+            <option value="mistralai/mistral-7b-instruct:free">Mistral 7b (Free)</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="prompt">Prompt:</label>
+        <textarea id="prompt" placeholder="Enter your text prompt here..."></textarea>
+    </div>
+
+    <button id="sendBtn">Send Request</button>
+
+    <div id="result"></div>
+
+    <script>
+        const sendBtn = document.getElementById('sendBtn');
+        const resultDiv = document.getElementById('result');
+
+        sendBtn.addEventListener('click', async () => {
+            const model = document.getElementById('model').value;
+            const prompt = document.getElementById('prompt').value;
+
+            if (!prompt) {
+                alert('Please enter a prompt');
+                return;
+            }
+
+            sendBtn.disabled = true;
+            resultDiv.innerText = 'Generating...';
+            resultDiv.className = '';
+
+            try {
+                const response = await fetch('/api/openrouter/text', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model, prompt })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    resultDiv.innerText = data.text;
+                } else {
+                    resultDiv.innerText = 'Error: ' + JSON.stringify(data.error, null, 2);
+                    resultDiv.className = 'error';
+                }
+            } catch (err) {
+                resultDiv.innerText = 'Network Error: ' + err.message;
+                resultDiv.className = 'error';
+            } finally {
+                sendBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
