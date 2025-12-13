@@ -3,11 +3,12 @@ const path = require('path');
 const fs = require('fs');
 const url = require('url');
 
-// Import the OpenRouter Service
-const openRouterService = require('./Server/OpenRouterApi/service');
+// Import API handlers
+const openRouterApi = require('./Server/OpenRouterApi/httpHandler');
 
 const PORT = 1234;
 const ROOT_DIR = path.join(__dirname, 'Server');
+const apiHandlers = [openRouterApi.handle];
 
 function send404(res) {
   res.statusCode = 404;
@@ -41,27 +42,17 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url);
   let pathname = decodeURIComponent(parsedUrl.pathname || '/');
 
-  // --- API ROUTES ---
-  if (pathname === '/api/openrouter/text' && req.method === 'POST') {
-      try {
-          const body = await readBody(req);
-          const result = await openRouterService.generateText(body.model, body.prompt);
-          sendJson(res, result);
-      } catch (err) {
-          sendJson(res, { success: false, error: err.message || "Server Error" });
+  // --- API ROUTES (delegated to handlers) ---
+  for (const handle of apiHandlers) {
+    try {
+      const handled = await handle(req, res);
+      if (handled) {
+        return;
       }
+    } catch (err) {
+      sendJson(res, { success: false, error: err.message || 'Server Error' });
       return;
-  }
-
-  if (pathname === '/api/openrouter/image' && req.method === 'POST') {
-      try {
-          const body = await readBody(req);
-          const result = await openRouterService.generateImage(body.model, body.prompt, body.aspectRatio);
-          sendJson(res, result);
-      } catch (err) {
-          sendJson(res, { success: false, error: err.message || "Server Error" });
-      }
-      return;
+    }
   }
 
   // --- STATIC FILE SERVER ---

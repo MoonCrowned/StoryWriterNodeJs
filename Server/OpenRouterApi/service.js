@@ -5,6 +5,15 @@ const https = require('https');
 const CONFIG_PATH = path.join(__dirname, 'config.txt');
 const IMAGES_DIR = path.join(__dirname, 'Images');
 
+// Ensure Images directory exists
+if (!fs.existsSync(IMAGES_DIR)){
+    try {
+        fs.mkdirSync(IMAGES_DIR, { recursive: true });
+    } catch (e) {
+        console.error("Failed to create Images dir:", e);
+    }
+}
+
 // Helper to load config
 function getApiKey() {
     try {
@@ -25,8 +34,6 @@ function makeRequest(options, postData) {
         const req = https.request(options, (res) => {
             let data = '';
             
-            // If image generation returns binary, we might need different handling, 
-            // but typically APIs return JSON with a URL or B64.
             res.setEncoding('utf8'); 
 
             res.on('data', (chunk) => {
@@ -78,8 +85,8 @@ async function generateText(model, prompt) {
             'Content-Type': 'application/json',
             'Content-Length': Buffer.byteLength(postData),
             'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': 'http://localhost:1234', // OpenRouter requires this
-            'X-Title': 'LocalStoryWriter' // OpenRouter requires this
+            'HTTP-Referer': 'http://localhost:1234', 
+            'X-Title': 'LocalStoryWriter'
         }
     };
 
@@ -98,24 +105,49 @@ async function generateText(model, prompt) {
     }
 }
 
-// Helper: Download image from URL
-function downloadImage(url, filepath) {
+// Helper: Save Image (Handles both URL download and Base64)
+function saveImage(urlOrBase64, filepath) {
     return new Promise((resolve, reject) => {
-        const client = url.startsWith('https') ? https : require('http');
-        client.get(url, (res) => {
-            if (res.statusCode === 200) {
-                const file = fs.createWriteStream(filepath);
-                res.pipe(file);
-                file.on('finish', () => {
-                    file.close(() => resolve(filepath));
+        // Check if it's a Data URI (Base64)
+        if (urlOrBase64.startsWith('data:')) {
+            try {
+                // Format: data:image/png;base64,iVBORw0KGgo...
+                const matches = urlOrBase64.match(/^data:(.+);base64,(.+)$/);
+                if (!matches) {
+                    return reject("Invalid Base64 data URI format");
+                }
+                // const type = matches[1]; // e.g., image/png
+                const data = matches[2];
+                const buffer = Buffer.from(data, 'base64');
+                
+                fs.writeFile(filepath, buffer, (err) => {
+                    if (err) reject(err);
+                    else resolve(filepath);
                 });
-            } else {
-                reject(`Failed to download image: Status ${res.statusCode}`);
+            } catch (err) {
+                reject("Failed to save Base64 image: " + err.message);
             }
-        }).on('error', (err) => {
-            fs.unlink(filepath, () => {}); // Delete failed file
-            reject(err.message);
-        });
+        } 
+        // Handle standard HTTP/HTTPS URL
+        else if (urlOrBase64.startsWith('http')) {
+            const client = urlOrBase64.startsWith('https') ? https : require('http');
+            client.get(urlOrBase64, (res) => {
+                if (res.statusCode === 200) {
+                    const file = fs.createWriteStream(filepath);
+                    res.pipe(file);
+                    file.on('finish', () => {
+                        file.close(() => resolve(filepath));
+                    });
+                } else {
+                    reject(`Failed to download image: Status ${res.statusCode}`);
+                }
+            }).on('error', (err) => {
+                fs.unlink(filepath, () => {}); // Delete failed file
+                reject(err.message);
+            });
+        } else {
+            reject("Unknown image source format (not http or data uri)");
+        }
     });
 }
 
@@ -124,31 +156,22 @@ async function generateImage(model, prompt, aspectRatio) {
     const apiKey = getApiKey();
     if (!apiKey) return { success: false, error: "API Key not found in config.txt" };
 
-    // Map aspect ratios to dimensions (OpenRouter/OpenAI standard usually prefers explicit sizes)
-    // Note: DALL-E 3 supports specific sizes. Other models might vary.
-    // We will send width/height based on aspect ratio for broad compatibility.
-    let width = 1024;
-    let height = 1024;
-
-    switch (aspectRatio) {
-        case "16:9": width = 1024; height = 576; break; // actually 1792x1024 for D3 but keeping generic
-        case "4:3": width = 1024; height = 768; break;
-        case "1:1": width = 1024; height = 1024; break;
-        case "3:4": width = 768; height = 1024; break;
-        case "9:16": width = 576; height = 1024; break;
-    }
-
-    const postData = JSON.stringify({
+    const payload = {
         model: model,
-        prompt: prompt,
-        size: `${width}x${height}` 
-        // Note: Some OpenRouter image models might expect different params. 
-        // We follow the standard OpenAI image generation body.
-    });
+        messages: [
+            { role: "user", content: prompt }
+        ],
+        modalities: ["image", "text"],
+        image_config: {
+            aspect_ratio: aspectRatio 
+        }
+    };
+
+    const postData = JSON.stringify(payload);
 
     const options = {
         hostname: 'openrouter.ai',
-        path: '/api/v1/images/generations',
+        path: '/api/v1/chat/completions',
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -162,25 +185,54 @@ async function generateImage(model, prompt, aspectRatio) {
     try {
         const result = await makeRequest(options, postData);
         
-        // Handle response
-        if (result.data && result.data.length > 0 && result.data[0].url) {
-            const imageUrl = result.data[0].url;
+        let imageUrl = null;
+        
+        if (result.choices && result.choices.length > 0) {
+            const message = result.choices[0].message;
+            
+            if (message.images && message.images.length > 0) {
+                // Check all possible variations
+                if (message.images[0].url) imageUrl = message.images[0].url;
+                else if (message.images[0].image_url && message.images[0].image_url.url) imageUrl = message.images[0].image_url.url;
+                else if (message.images[0].imageUrl && message.images[0].imageUrl.url) imageUrl = message.images[0].imageUrl.url;
+            }
+            else if (typeof message.content === 'string' && (message.content.startsWith('http') || message.content.startsWith('data:image'))) {
+                 imageUrl = message.content;
+            }
+            else if (result.data && result.data.length > 0 && result.data[0].url) {
+                imageUrl = result.data[0].url;
+            }
+        }
+
+        if (imageUrl) {
             const timestamp = Date.now();
-            const cleanPrompt = prompt.replace(/[^a-z0-9]/gi, '_').substring(0, 20);
-            const filename = `${timestamp}_${cleanPrompt}.png`; // Assuming PNG
+            // Create a safe filename: keep only ASCII letters/digits, drop others
+            let cleanPrompt = prompt
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '')
+                .substring(0, 20);
+
+            if (!cleanPrompt) {
+                cleanPrompt = 'img';
+            }
+
+            const filename = `${timestamp}_${cleanPrompt}.png`;
             const filePath = path.join(IMAGES_DIR, filename);
             const metaPath = path.join(IMAGES_DIR, `${filename}.txt`);
 
-            // Save Image
-            await downloadImage(imageUrl, filePath);
+            // Use saveImage instead of downloadImage
+            await saveImage(imageUrl, filePath);
 
             // Save Meta
-            const metaContent = JSON.stringify({ model, prompt, aspectRatio }, null, 2);
+            // Don't save the full Base64 string to meta if it's huge
+            const safeUrlLog = imageUrl.startsWith('data:') ? 'Base64 Data (Truncated)' : imageUrl;
+            const metaContent = JSON.stringify({ model, prompt, aspectRatio, originalUrl: safeUrlLog }, null, 2);
             fs.writeFileSync(metaPath, metaContent);
 
-            return { success: true, filePath: filePath, url: imageUrl };
+            return { success: true, filePath: filePath, url: imageUrl.startsWith('data:') ? '(base64 hidden)' : imageUrl };
         } else {
-            return { success: false, error: "No image data returned", raw: result };
+            console.log("Raw Image Gen Result:", JSON.stringify(result, null, 2));
+            return { success: false, error: "No image data found in response", raw: result };
         }
     } catch (err) {
         return { success: false, error: err };

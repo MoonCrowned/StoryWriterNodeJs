@@ -13,14 +13,121 @@ Functions (exported in service.js):
 
 1. generateText(model, prompt)
    - Arguments:
-     - model (string): The model ID (e.g., "openai/gpt-4").
+     - model (string): The model ID (e.g., "google/gemini-2.5-flash").
      - prompt (string): The input text prompt.
-   - Returns: Promise resolving to { success: boolean, data: string (text) | object (error) }
+   - Returns: Promise resolving to object:
+       - success (boolean)
+       - text (string | undefined) – generated text on success
+       - error (any | undefined) – error details on failure
+       - raw (any | undefined) – optional raw OpenRouter response for debugging
 
 2. generateImage(model, prompt, aspectRatio)
    - Arguments:
      - model (string): The model ID.
      - prompt (string): The image description.
      - aspectRatio (string): One of "16:9", "4:3", "1:1", "3:4", "9:16".
-   - Returns: Promise resolving to { success: boolean, filePath: string | null, error: object | null }
-     - Saves the image to 'Images/' and a corresponding metadata .txt file.
+   - Returns: Promise resolving to object:
+       - success (boolean)
+       - filePath (string | undefined) – absolute path to saved image file on success
+       - url (string | undefined) – original image URL (for HTTP responses) or marker for Base64
+       - error (any | undefined) – error details on failure
+       - raw (any | undefined) – optional raw OpenRouter response for debugging
+     - On success saves the image to 'Images/' and a corresponding metadata .txt file.
+
+Supported text models (for generateText)
+----------------------------------------
+
+The following model IDs are pre-configured in the test frontend dropdown and are known to work with this service:
+
+- xAI: Grok 4.1 Fast (free) – `x-ai/grok-4.1-fast:free`
+- xAI: Grok Code Fast 1 – `x-ai/grok-code-fast-1`
+- Anthropic: Claude Sonnet 4.5 – `anthropic/claude-sonnet-4.5`
+- Google: Gemini 2.5 Flash – `google/gemini-2.5-flash`
+- MiniMax: MiniMax M2 – `minimax/minimax-m2`
+- Google: Gemini 2.0 Flash – `google/gemini-2.0-flash-001`
+- Google: Gemini 3 Pro Preview – `google/gemini-3-pro-preview`
+- Google: Gemini 2.5 Pro – `google/gemini-2.5-pro`
+- Google: Gemini 2.5 Flash Lite – `google/gemini-2.5-flash-lite`
+- xAI: Grok 4 Fast – `x-ai/grok-4-fast`
+- Google: Gemini 2.5 Flash Preview 09-2025 – `google/gemini-2.5-flash-preview-09-2025`
+- Anthropic: Claude Opus 4.5 – `anthropic/claude-opus-4.5`
+- DeepSeek: DeepSeek V3 0324 – `deepseek/deepseek-chat-v3-0324`
+- OpenAI: GPT-5 Mini – `openai/gpt-5-mini`
+
+You can also try other compatible text models from OpenRouter by passing their IDs to `generateText`.
+
+Supported image models (for generateImage)
+-----------------------------------------
+
+The following model IDs are pre-configured in the image test frontend dropdown:
+
+- Google: Nano Banana Pro (Gemini 3 Pro Image Preview) – `google/gemini-3-pro-image-preview`
+- Google: Gemini 2.5 Flash Image (Nano Banana) – `google/gemini-2.5-flash-image`
+- Google: Gemini 2.5 Flash Image Preview (Nano Banana) – `google/gemini-2.5-flash-image-preview`
+- OpenAI: GPT-5 Image – `openai/gpt-5-image`
+- OpenAI: GPT-5 Image Mini – `openai/gpt-5-image-mini`
+- Black Forest Labs: FLUX.2 Pro – `black-forest-labs/flux.2-pro`
+- Black Forest Labs: FLUX.2 Flex – `black-forest-labs/flux.2-flex`
+
+Different models may support different options for `image_config` and aspect ratios. This service always passes `image_config.aspect_ratio` with the value you provide in `aspectRatio`.
+
+Usage examples (Node.js)
+------------------------
+
+Assuming this project root contains `server.js` and the service lives in `Server/OpenRouterApi/service.js`.
+
+Basic text generation example:
+
+```js
+// example_text.js
+const { generateText } = require('./Server/OpenRouterApi/service');
+
+async function main() {
+  const { success, text, error } = await generateText(
+    'google/gemini-2.5-flash',
+    'Напиши короткий фантастический рассказ про путешествие на Марс на русском языке.'
+  );
+
+  if (!success) {
+    console.error('Text generation error:', error);
+    return;
+  }
+
+  console.log('Generated text:\n');
+  console.log(text);
+}
+
+main().catch(console.error);
+```
+
+Basic image generation example:
+
+```js
+// example_image.js
+const { generateImage } = require('./Server/OpenRouterApi/service');
+
+async function main() {
+  const { success, filePath, error } = await generateImage(
+    'google/gemini-2.5-flash-image-preview',
+    'A portrait of a girl standing on a futuristic balcony overlooking a neon city at night, ultra detailed, 4K',
+    '16:9'
+  );
+
+  if (!success) {
+    console.error('Image generation error:', error);
+    return;
+  }
+
+  console.log('Image saved to:', filePath);
+}
+
+main().catch(console.error);
+```
+
+Make sure `config.txt` in `Server/OpenRouterApi` contains a valid line:
+
+```text
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+The same service functions can be imported and used from any other backend scripts in this Node.js project.
